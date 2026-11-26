@@ -1,8 +1,8 @@
 package com.example.order_service.dto.request;
 
+import jakarta.validation.constraints.NotEmpty;
 import lombok.*;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 @Getter
@@ -12,12 +12,12 @@ import java.util.List;
 @Builder
 public class CreateOrderRequest {
 
+    @NotEmpty(message = "CustomerId không đuợc trống")
     private String userId;
 
-    @Builder.Default
-    private BigDecimal discountAmount = BigDecimal.ZERO;
+    @NotEmpty(message = "Đơn hàng phải co ít nhất 1 sản phẩm")
+    private List<OrderItemRequest> orderItems;
 
     private OrderAddressRequest address;
 
-    private List<OrderItemRequest> items;
 }

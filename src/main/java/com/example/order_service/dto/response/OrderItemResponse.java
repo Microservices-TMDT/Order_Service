@@ -13,9 +13,7 @@ public class OrderItemResponse {
 
     private String id;
 
-    private String variantId;
-
-    private String variantName;
+    private String productId;
 
     private BigDecimal unitPrice;
 

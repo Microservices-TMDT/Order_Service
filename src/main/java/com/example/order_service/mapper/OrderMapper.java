@@ -9,6 +9,9 @@ import com.example.order_service.dto.request.OrderItemRequest;
 import com.example.order_service.dto.response.OrderAddressResponse;
 import com.example.order_service.dto.response.OrderItemResponse;
 import com.example.order_service.dto.response.OrderResponse;
+import com.example.order_service.kafka.events.OrderCreatedEvent;
+import org.mapstruct.BeanMapping;
+import org.mapstruct.Builder;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
@@ -26,7 +29,11 @@ public interface OrderMapper {
 
     OrderResponse toOrderResponse(Order order);
 
+    @Mapping(target = "productId", source = "variantId")
     OrderItemResponse toOrderItemResponse(OrderItem orderItem);
 
     OrderAddressResponse toOrderAddressResponse(OrderAddress orderAddress);
+
+    @BeanMapping(builder = @Builder(disableBuilder = true))
+    OrderCreatedEvent toEvent(OrderResponse orderResponse);
 }

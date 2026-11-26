@@ -1,93 +1,93 @@
 package com.example.order_service.service.impl;
 
 import com.example.order_service.Entities.Order;
-import com.example.order_service.Entities.OrderAddress;
 import com.example.order_service.Entities.OrderItem;
+import com.example.order_service.clients.ProductClient;
 import com.example.order_service.dto.request.CreateOrderRequest;
-import com.example.order_service.dto.response.OrderAddressResponse;
+import com.example.order_service.dto.request.OrderItemRequest;
 import com.example.order_service.dto.response.OrderItemResponse;
 import com.example.order_service.dto.response.OrderResponse;
+import com.example.order_service.kafka.events.OrderCreatedEvent;
 import com.example.order_service.mapper.OrderMapper;
-import com.example.order_service.repository.OrderAddressRepository;
 import com.example.order_service.repository.OrderItemRepository;
 import com.example.order_service.repository.OrderRepository;
 import com.example.order_service.service.OrderService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
-    private final OrderAddressRepository orderAddressRepository;
     private final OrderMapper orderMapper;
+    private final ProductClient productClient;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     @Override
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
 
-        BigDecimal totalAmount = request.getItems().stream()
-                .map(item -> {
-                    BigDecimal lineTotal = item.getUnitPrice()
-                            .multiply(BigDecimal.valueOf(item.getQuantity()))
-                            .subtract(item.getDiscountAmount());
-                    return lineTotal;
-                })
-                .reduce(BigDecimal.ZERO, BigDecimal::add)
-                .subtract(request.getDiscountAmount());
+        // List<String> productIds = request.getOrderItems().stream()
+        // .map(OrderItemRequest::getProductId)
+        // .distinct()
+        // .toList();
+        //
+        // List<ProductResponse> products = productClient.getProductsByIds(new
+        // ProductFilter(productIds));
+        //
+        // Map<String, ProductResponse> productPriceMap = new HashMap<>();
+        // products.forEach(productResponse -> {
+        // productPriceMap.put(productResponse.getId(), productResponse);
+        // });
 
-        Order order = orderMapper.toOrder(request);
-        order.setOrderCode(generateOrderCode());
-        order.setTotalAmount(totalAmount);
-        order.setStatus("PENDING_PAYMENT");
-
+        Order order = new Order();
+        order.setUserId(request.getUserId());
+        order.setStatus("NEW");
+        order.setTotalAmount(BigDecimal.ZERO);
         Order savedOrder = orderRepository.save(order);
 
-        OrderAddress orderAddress = orderMapper.toOrderAddress(request.getAddress());
-        orderAddress.setOrderId(savedOrder.getId());
+        List<OrderItem> orderItems = new ArrayList<>();
 
-        OrderAddress savedAddress = orderAddressRepository.save(orderAddress);
+        for (OrderItemRequest itemRequest : request.getOrderItems()) {
+            // ProductResponse productResponse =
+            // productPriceMap.get(itemRequest.getProductId());
+            // if (productResponse == null) {
+            // throw new ApplicationException("Product " + itemRequest.getProductId() + "
+            // not existed");
+            // }
+            // if (itemRequest.getQuantity() > productResponse.getStock()) {
+            // throw new ApplicationException("Product " + itemRequest.getProductId() + "
+            // not enough");
+            // }
+            // Integer price = productResponse.getPrice();
 
-        List<OrderItem> orderItems = request.getItems().stream()
-                .map(itemRequest -> {
-                    OrderItem item = orderMapper.toOrderItem(itemRequest);
-                    item.setOrderId(savedOrder.getId());
-                    item.setLineTotal(
-                            itemRequest.getUnitPrice()
-                                    .multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
-                                    .subtract(itemRequest.getDiscountAmount()));
+            OrderItem item = new OrderItem();
+            item.setOrderId(savedOrder.getId());
+            item.setVariantId(itemRequest.getProductId());
+            item.setUnitPrice(BigDecimal.ZERO);
+            item.setQuantity(itemRequest.getQuantity());
+            orderItems.add(item);
+        }
 
-                    return item;
-                })
-                .toList();
-
-        List<OrderItem> savedItems = orderItemRepository.saveAll(orderItems);
-
-        List<OrderItemResponse> itemResponses = savedItems.stream()
+        orderItemRepository.saveAll(orderItems);
+        OrderResponse orderResponse = orderMapper.toOrderResponse(orderRepository.save(savedOrder));
+        List<OrderItemResponse> itemResponses = orderItems.stream()
                 .map(orderMapper::toOrderItemResponse)
                 .toList();
-
-        OrderAddressResponse addressResponse = orderMapper.toOrderAddressResponse(savedAddress);
-
-        OrderResponse response = orderMapper.toOrderResponse(savedOrder);
-        response.setAddress(addressResponse);
-        response.setItems(itemResponses);
-
-        return response;
-    }
-
-    private String generateOrderCode() {
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-        String shortUuid = UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
-        return "ORD-" + timestamp + "-" + shortUuid;
+        orderResponse.setItems(itemResponses);
+        OrderCreatedEvent orderCreatedEvent = orderMapper.toEvent(orderResponse);
+        kafkaTemplate.send("order_created", orderCreatedEvent);
+        log.info("Publish new order success to order_created");
+        return orderResponse;
     }
 }

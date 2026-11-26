@@ -1,5 +1,7 @@
 package com.example.order_service.dto.request;
 
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -11,14 +13,10 @@ import java.math.BigDecimal;
 @Builder
 public class OrderItemRequest {
 
-    private String variantId;
-
-    private String variantName;
-
+    @NotEmpty
+    private String productId;
+    @NotNull
     private BigDecimal unitPrice;
-
+    @NotNull
     private int quantity;
-
-    @Builder.Default
-    private BigDecimal discountAmount = BigDecimal.ZERO;
 }
